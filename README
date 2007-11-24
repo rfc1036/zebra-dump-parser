@@ -1,0 +1,21 @@
+This program parses a dump of BGP routes in the zebra/MRT format.
+
+If you do not want to collect your own BGP dumps then a popular source 
+for them is the RIPE RIS service, e.g.:
+http://data.ris.ripe.net/rrc00/2003.04/bview.20030408.0000.gz
+
+A good list of descriptions of ASNs is available at
+http://www.potaroo.net/bgp/iana/asn-ctl.txt .
+
+
+To test aslookup.pl you can set $format = 1 and then run:
+
+zcat bview.20030321.1600.gz | time ./zebra-dump-parser.pl >DUMP 2>DUMPERR
+sort < DUMP | uniq | time ./aggregate-by-asn.pl > routes.tmp
+mv routes.tmp routes
+
+
+If you do something interesting with this software then feel free to
+send me an email with some information.
+
+Marco d'Itri <md@linux.it>
