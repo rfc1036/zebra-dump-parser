@@ -1,0 +1,229 @@
+#!/usr/bin/perl
+#
+# This program generates statistics about the networks listed in SBL DROP,
+# who announces them, what else they announce and who is providing transit
+# to who announces them.
+#
+# BEWARE: the term "transit" in this program is used improperly to denote
+# both transit and and peering relationships!
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 2 or later
+# as published by the Free Software Foundation.
+
+use strict;
+use warnings;
+
+use Getopt::Long;
+use Net::Patricia;
+use List::Util qw(sum);
+
+##############################################################################
+my ($BGP_Dump, $AS_Names, $Drop, $Good_Bad_Cutoff);
+GetOptions(
+	'routes=s'		=> \$BGP_Dump,
+	'as-names=s'	=> \$AS_Names,
+	'drop=s'		=> \$Drop,
+	'cutoff=i'		=> \$Good_Bad_Cutoff,
+) or exit 1;
+
+die "missing parameter" if not ($BGP_Dump and $AS_Names and $Drop);
+
+# report if an ASN announces <= than this many networks not in DROP
+$Good_Bad_Cutoff ||= 6;
+
+##############################################################################
+my ($drop, $dropnum) = parse_drop_data($Drop);
+my $as_name = parse_asn_names_data($AS_Names);
+my ($origins, $transits, $announces) = parse_bgp_data($BGP_Dump);
+
+##############################################################################
+# the number of listed networks announced by each AS
+my %origins_stats  = map {
+	$_ => scalar keys %{$origins->{$_}}
+} keys %$origins;
+
+# list of ASes announcing only networks listed by SBL DROP
+my %is_evil_as;
+
+# does not include downstream ASes
+print "Listed networks announced by each AS:\n";
+foreach my $asn (reverse sort {
+			$origins_stats{$a} <=> $origins_stats{$b} || $a <=> $b
+		} keys %origins_stats) {
+	my $announced = scalar keys %{$announces->{$asn}};
+
+	my @not_listed;
+	printf('%2d %5s', $origins_stats{$asn}, $asn);
+	print "  $as_name->{$asn}" if exists $as_name->{$asn};
+	if ($announced == 0) {
+		print " [ALL LISTED]";
+		$is_evil_as{$asn} = undef;
+	} elsif ($announced <= $Good_Bad_Cutoff) {
+		@not_listed = keys %{$announces->{$asn}};
+	} else {
+		print " [of $announced]";
+	}
+	print "\n";
+	print '          ' . join(' ', sort keys %{$origins->{$asn}}) . "\n";
+	print '          Not listed: ' . join(' ', sort @not_listed) . "\n"
+		if @not_listed;
+}
+
+print "\n" .(+ keys %$origins)
+	. " of $dropnum listed networks are announced.\n";
+print scalar(keys %is_evil_as)
+	. " ASes are announcing only listed networks.\n";
+
+##############################################################################
+my (%evil_transits_stats, %bad_transits_stats);
+foreach my $asn (keys %$transits) {
+	# the number of listed networks received by transits of each unclean AS
+	my $sum = sum(
+		map {
+			# the number of listed networks announced by each unclean AS
+			scalar keys %{$transits->{$asn}->{$_}}
+		} keys %{$transits->{$asn}} # each transited unclean AS
+	);
+
+	# check if there is an evil AS in the list of transited ASes
+	my $evil;
+	foreach (%{$transits->{$asn}}) {
+		next if not exists $is_evil_as{$_};
+		$evil = 1;
+		last;
+	}
+
+	if ($evil) {
+		$evil_transits_stats{$asn} = $sum;
+	} else {
+		$bad_transits_stats{$asn}  = $sum;
+	}
+}
+
+##############################################################################
+print "\nListed networks received by neighbors of evil ASes:\n";
+foreach my $asn (reverse sort {
+			$evil_transits_stats{$a} <=> $evil_transits_stats{$b} ||
+			$a <=> $b
+		} keys %evil_transits_stats) {
+	printf('%2d %5s', $evil_transits_stats{$asn}, $asn);
+	print "  $as_name->{$asn}" if exists $as_name->{$asn};
+	print "\n";
+	print '          from AS: '
+		. join(' ', sort { $a <=> $b } keys %{$transits->{$asn}}) . "\n";
+}
+
+print "\nListed networks received by neighbors of bad ASes:\n";
+foreach my $asn (reverse sort {
+			$bad_transits_stats{$a} <=> $bad_transits_stats{$b} ||
+			$a <=> $b
+		} keys %bad_transits_stats) {
+	printf('%2d %5s', $bad_transits_stats{$asn}, $asn);
+	print "  $as_name->{$asn}" if exists $as_name->{$asn};
+	print "\n";
+	print '          from AS: '
+		. join(' ', sort { $a <=> $b } keys %{$transits->{$asn}}) . "\n";
+}
+
+#use Data::Dumper; print Dumper($origins, $transits);
+#use Data::Dumper; print Dumper($announces);
+#use Data::Dumper; print Dumper(\%origins_stats, \%evil_transits_stats, \%bad_transits_stats);
+
+exit 0;
+
+##############################################################################
+sub parse_drop_data {
+	my ($file) = @_;
+
+	my $drop = new Net::Patricia;
+	my $dropnum = 0;
+
+	open(DROP, $file) or die "cannot open $file: $!\n";
+
+	while (<DROP>) {
+		next if /^;/ or /^$/;
+		my ($net, $sbl) = /^(\S+)\s*;\s*(\S+)/;
+		eval { $drop->add_string($net, [$sbl, $net]); };
+		warn "add_string($_): $@" if $@;
+		$dropnum++;
+	}
+	close DROP;
+
+	return ($drop, $dropnum);
+}
+
+##############################################################################
+sub parse_asn_names_data {
+	my ($file) = @_;
+	my $as_name;
+
+	open(ASNAMES, $file) or die "cannot open $file: $!";
+	while (<ASNAMES>) {
+		s/\n//;
+		next if /^$/;
+		next if /^1\./; # hack to ignored reserved ASN32 names
+		s/^AS//;
+		s/#.*$//;
+		#my ($as, $desc) = split(/\s+/, $_, 2);
+		my ($as, undef, undef, $desc) = split(/\s+/, $_, 4);
+		$as_name->{$as} = $desc;
+	}
+	close ASNAMES;
+
+	return $as_name;
+}
+
+##############################################################################
+sub parse_bgp_data {
+	my ($file) = @_;
+	my ($origins, $transits, $announces);
+
+	open(BGPDUMP, $file) or die "cannot open $file: $!";
+	while (<BGPDUMP>) {
+		my ($net, @as) = split;
+		remove_prepends(\@as);
+		my ($origin, $transit) = @as[-1,-2];
+
+		# ignore the RIPE RIS peerings
+		next if not $origin or ($transit and $transit eq 3333);
+
+		# lookup the route in the DROP list
+		my ($result) = eval { $drop->match_string($net); };
+		warn "match_string($net): $@", next if $@;
+
+		if (not $result) { # not listed
+			# non-listed networks announced by AS $origin
+			$announces->{$origin}->{$net} = undef;
+			next;
+		}
+
+		my $sbl = $result->[0];
+		#print "$sbl ==> $net <$origin> <$transit>\n";
+
+		# listed networks announced by AS $origin
+		$origins->{$origin}->{$sbl} = $net;
+		# listed networks transited by AS $transit for AS $origin
+		$transits->{$transit}->{$origin}->{$sbl} = $net if $transit;
+	}
+	close BGPDUMP;
+
+	return ($origins, $transits, $announces);
+}
+
+##############################################################################
+sub remove_prepends {
+	my ($as) = @_;
+	my $last = '';
+
+	my @newas;
+	for (my $i = 0; $i < @$as; $i++) {
+		next if $last eq $as->[$i];
+		push(@newas, $as->[$i]);
+		$last = $as->[$i];
+	}
+	@{$as} = @newas;
+
+	return;
+}
+

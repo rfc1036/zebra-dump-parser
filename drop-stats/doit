@@ -1,0 +1,29 @@
+#!/bin/sh -e
+
+# set $format = 2 in zebra-dump-parser.pl.
+
+PATH=".:$PATH"
+
+wget -O data/drop http://www.spamhaus.org/drop/drop.lasso
+wget -O data/asn.tmp http://www.potaroo.net/bgp/iana/asn-ctl.txt \
+  && mv data/asn.tmp data/asn || true
+
+wget -c --progress=dot:mega -O data/bview.current.gz \
+  http://data.ris.ripe.net/rrc00/$(date +%Y.%m)/bview.$(date +%Y%m%d).0800.gz
+zcat data/bview.*.gz | nice zebra-dump-parser.pl > data/routes.tmp
+mv data/routes.tmp data/routes
+rm -f data/bview.*.gz data/routes.cache
+
+nice -n 19 \
+drop-stats --as-names=data/asn --drop=data/drop --routes=data/routes \
+  > data/drop-stats.txt.tmp
+
+{
+  cat info.txt
+  printf "Generated on: "
+  date
+  echo
+  cat data/drop-stats.txt.tmp
+} > drop-stats.txt
+rm data/drop-stats.txt.tmp
+

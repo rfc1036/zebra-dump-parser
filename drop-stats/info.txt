@@ -1,0 +1,14 @@
+A routing table snapshot is downloaded from the RIPE RIS archive.
+Each as-path of each route is processed and the last and second-last
+autonomous systems in the paths are recorded as the origin of the route
+and its "neighbor" networks (prepends are ignored).
+
+Beware: determining transit vs. peering vs. customer relationships is a
+non-trivial problem, so the last two tables may contain unexpected results.
+
+Networks are considered "evil" if they only announce listed networks.
+If they also announce non-listed networks, they are merely "bad".
+
+The first table only considers networks announced by the AS being
+considered, networks announced by downstream ASes are not counted there.
+
