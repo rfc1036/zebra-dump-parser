@@ -17,6 +17,7 @@ use warnings;
 use Getopt::Long;
 use Net::Patricia;
 use List::Util qw(sum);
+use Storable;
 
 ##############################################################################
 my ($BGP_Dump, $AS_Names, $Drop, $Good_Bad_Cutoff);
@@ -176,6 +177,22 @@ sub parse_asn_names_data {
 
 ##############################################################################
 sub parse_bgp_data {
+	my ($file) = @_;
+	my $cache_file = $file . '.cache';
+
+	if (-e $cache_file) {
+		my $cached_data = retrieve($cache_file)
+			or die "retrieve($cache_file): $!";
+		return @$cached_data;
+	}
+
+	my @data = real_parse_bgp_data(@_);
+	store(\@data, $cache_file) or die "store($cache_file): $!";
+
+	return @data;
+}
+
+sub real_parse_bgp_data {
 	my ($file) = @_;
 	my ($origins, $transits, $announces);
 
