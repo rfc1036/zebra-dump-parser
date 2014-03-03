@@ -64,8 +64,8 @@ use constant {
 	BGP_ATTR_ATOMIC_AGGREGATE	=> 6,
 	BGP_ATTR_AGGREGATOR			=> 7,
 	BGP_ATTR_COMMUNITIES		=> 8,
-#	BGP_ATTR_ORIGINATOR_ID		=> 9,
-#	BGP_ATTR_CLUSTER_LIST		=> 10,
+	BGP_ATTR_ORIGINATOR_ID		=> 9,
+	BGP_ATTR_CLUSTER_LIST		=> 10,
 ##	BGP_ATTR_DPA				=> 11,
 #	BGP_ATTR_ADVERTISER			=> 12,
 ##	BGP_ATTR_RCID_PATH			=> 13,
@@ -405,6 +405,10 @@ sub parse_attributes {
 			if ($format == 1) { # XXX
 			print "|WITHDRAWN: $_\n" foreach(parse_nlri_prefixes($nlri, $afi));
 			}
+		} elsif ($type == BGP_ATTR_ORIGINATOR_ID) {
+			$attr[BGP_ATTR_ORIGINATOR_ID] = $attrib;		# IPv4
+		} elsif ($type == BGP_ATTR_CLUSTER_LIST) {
+			$attr[BGP_ATTR_CLUSTER_LIST] = $attrib;			# IPv4
 		} else {
 			warn "Unknown BGP attribute $type (flags: $flags)\n";
 		}
@@ -494,6 +498,10 @@ sub print_verbose_attributes {
 	print 'AGGREGATOR: ' . unpack('n', ${$attr->[BGP_ATTR_AGGREGATOR]}[0])
 			. ' ' .  inet_ntoa(${$attr->[BGP_ATTR_AGGREGATOR]}[1]) . "\n"
 		if $attr->[BGP_ATTR_AGGREGATOR];
+	print 'ORIGINATOR_ID: ' . inet_ntoa($attr->[BGP_ATTR_ORIGINATOR_ID])."\n"
+		if notnull($attr->[BGP_ATTR_ORIGINATOR_ID]);
+	print 'CLUSTER_LIST: ' . inet_ntoa($attr->[BGP_ATTR_CLUSTER_LIST])."\n"
+		if notnull($attr->[BGP_ATTR_CLUSTER_LIST]);
 	print "COMMUNITIES: "
 			. print_communities(@{$attr->[BGP_ATTR_COMMUNITIES]}) . "\n"
 		if $attr->[BGP_ATTR_COMMUNITIES];
