@@ -531,7 +531,7 @@ sub print_communities {
 
 sub pretty_as {
 	my ($as_hi, $as_lo) = unpack('nn', $_[0]);
-	return defined $as_lo ? ($as_hi ? "$as_hi.$as_lo" : $as_lo) : $as_hi;
+	return defined $as_lo ? ($as_hi ? unpack('N', $_[0]) : $as_lo) : $as_hi;
 }
 
 sub print_aspath {
