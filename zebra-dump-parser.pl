@@ -8,11 +8,8 @@
 # <labovit@merit.edu>, which is part of the MRT distribution.
 #
 # Documentation about the zebra/MRT packet format:
-# http://www.mrtd.net/mrt_doc/html/mrtprogrammer.html
-# http://manticore.2y.net/doc/zebra/PBDF.html
-# http://www.sprintlabs.com/Department/IP-Interworking/Routing/PyRT/README.mrtd
-# http://www.ripe.net/projects/ris/docs/asn.html
-# http://tools.ietf.org/id/draft-ietf-grow-mrt-04.txt
+# http://www.iana.org/assignments/mrt/mrt.xml
+# http://tools.ietf.org/html/rfc6396
 
 use warnings;
 use strict;
@@ -33,8 +30,12 @@ use constant {
 
 	BGP4MP_STATE_CHANGE			=> 0,
 	BGP4MP_MESSAGE				=> 1,
-	BGP4MP_ENTRY				=> 2,
-	BGP4MP_SNAPSHOT				=> 3,
+	BGP4MP_ENTRY				=> 2,	# deprecated
+	BGP4MP_SNAPSHOT				=> 3,	# deprecated
+	BGP4MP_MESSAGE_AS4			=> 4,
+	BGP4MP_STATE_CHANGE_AS4		=> 5,
+	BGP4MP_MESSAGE_LOCAL		=> 6,
+	BGP4MP_MESSAGE_AS4_LOCAL	=> 7,
 
 	AFI_IP						=> 1,
 	AFI_IP6						=> 2,
@@ -269,8 +270,19 @@ sub decode_mrt_packet {
 			print "OLD STATE: $old_state  NEW STATE: $new_state\n";
 			# state numbers: see RFC 4271, Appendix 1
 			# 1:IDLE 2:CONNECT 3:ACTIVE 4:OPENSENT 5:OPENCONFIRM 6:ESTABLISHED
-		} elsif ($subtype == BGP4MP_MESSAGE) { #------------------------------
-			my ($srcas, $dstas, $ifidx, $af, $rest) = unpack('nnnn a*', $$pkt);
+		} elsif ($subtype == BGP4MP_MESSAGE or #------------------------------
+				 $subtype == BGP4MP_MESSAGE_AS4) {
+			my ($subtype_str, $asn_unpack_format, $asn_length);
+			if ($subtype == BGP4MP_MESSAGE) {
+				$subtype_str = 'BGP4MP_MESSAGE';
+				$asn_unpack_format = 'nnnn a*';	# 16 bit ASNs
+			} else {
+				$subtype_str = 'BGP4MP_MESSAGE_AS4';
+				$asn_unpack_format = 'NNnn a*';	# 32 bit ASNs
+				$asn_length = 4;
+			}
+			my ($srcas, $dstas, $ifidx, $af, $rest) =
+				unpack($asn_unpack_format, $$pkt);
 
 			my $unpack_format;
 			if ($af == AFI_IP) {
@@ -278,16 +290,16 @@ sub decode_mrt_packet {
 			} elsif ($af == AFI_IP6) {
 				$unpack_format = 'a16 a16 a*';
 			} else {
-				warn "TYPE: BGP4MP/BGP4MP_MESSAGE AFI_UNKNOWN_$af\n";
+				warn "TYPE: BGP4MP/$subtype_str AFI_UNKNOWN_$af\n";
 				return;
 			}
 
 			my ($srcip, $dstip, $bgppkt) = unpack($unpack_format, $rest);
-			print "TYPE: BGP4MP/BGP4MP_MESSAGE " .
+			print "TYPE: BGP4MP/$subtype_str " .
 					($af == AFI_IP ? 'AFI_IP' : 'AFI_IP6' ) . "\n";
 			print "FROM: " . inet_ntop($af, $srcip) . "\n" if notnull($srcip);
 			print "TO: "   . inet_ntop($af, $dstip) . "\n" if notnull($dstip);
-			parse_bgp_packet($bgppkt);
+			parse_bgp_packet($bgppkt, $asn_length);
 		} elsif ($subtype == BGP4MP_ENTRY) { #--------------------------------
 			warn "NOT TESTED"; # XXX
 			my ($view, $status, $time_change, $afi, $safi, $next_hop, $prefix,
@@ -418,7 +430,7 @@ sub parse_attributes {
 }
 
 sub parse_bgp_packet {
-	my ($bgppkt) = @_;
+	my ($bgppkt, $asn_length) = @_;
 
 	my ($marker, $length, $type, $data) = unpack('a16 n C a*', $bgppkt);
 
@@ -454,7 +466,7 @@ sub parse_bgp_packet {
 	} elsif ($type == BGP_TYPE_UPDATE) {
 		print "BGP PACKET TYPE: UPDATE\n";
 		my ($unf_routes, $attributes, $nlri) = unpack('n/a n/a a*', $data);
-		my $attr = parse_attributes($attributes);
+		my $attr = parse_attributes($attributes, $asn_length);
 		print_verbose_attributes($attr);
 		print "WITHDRAWN: $_\n" foreach (parse_nlri_prefixes($unf_routes));
 		print "ANNOUNCED: $_\n" foreach (parse_nlri_prefixes($nlri));
