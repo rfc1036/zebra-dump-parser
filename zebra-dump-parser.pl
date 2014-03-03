@@ -254,7 +254,7 @@ sub decode_mrt_packet {
 			if ($af == AFI_IP) {
 				$unpack_format = 'a4 a4 n n';
 			} elsif ($af == AFI_IP6) {
-				$unpack_format = 'C16 C16 n n';
+				$unpack_format = 'a16 a16 n n';
 			} else {
 				warn "TYPE: BGP4MP/BGP4MP_STATE_CHANGE AFI_UNKNOWN_$af\n";
 				return;
@@ -276,7 +276,7 @@ sub decode_mrt_packet {
 			if ($af == AFI_IP) {
 				$unpack_format = 'a4 a4 a*';
 			} elsif ($af == AFI_IP6) {
-				$unpack_format = 'C16 C16 a*';
+				$unpack_format = 'a16 a16 a*';
 			} else {
 				warn "TYPE: BGP4MP/BGP4MP_MESSAGE AFI_UNKNOWN_$af\n";
 				return;
@@ -304,7 +304,7 @@ sub decode_mrt_packet {
 	} elsif ($type == MSG_BGP4PLUS ###########################################
 		  or $type == MSG_BGP) { #############################################
 		my $unpack_format = ($type == MSG_BGP4PLUS)
-			? 'n C16 n C16 n/a n/a a*' : 'n a4 n a4 n/a n/a a*';
+			? 'n a16 n a16 n/a n/a a*' : 'n a4 n a4 n/a n/a a*';
 		my $afi = ($type == MSG_BGP4PLUS) ? AFI_IP6 : AFI_IP;
 		my ($srcas, $srcip, $dstas, $dstip, $unf_routes, $attributes, $nlri)
 			= unpack($unpack_format, $$pkt);
