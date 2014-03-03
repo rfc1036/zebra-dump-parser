@@ -487,7 +487,7 @@ sub print_verbose_attributes {
 	my ($attr) = @_;
 
 	print 'ORIGIN: ' . $BGP_ORIGIN[$attr->[BGP_ATTR_ORIGIN]] . "\n"
-		if $attr->[BGP_ATTR_ORIGIN];
+		if defined $attr->[BGP_ATTR_ORIGIN];
 	print 'AS_PATH:'  . print_aspath($attr->[BGP_ATTR_AS_PATH]) . "\n"
 		if $attr->[BGP_ATTR_AS_PATH];
 	print 'NEXT_HOP: ' . inet_ntoa($attr->[BGP_ATTR_NEXT_HOP])."\n"
